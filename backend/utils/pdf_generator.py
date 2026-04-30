@@ -7,8 +7,8 @@ from config import Config
 import os
 
 def generate_report_card(student_id):
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
 
     cur.execute("""
         SELECT s.name, s.usn, c.class_name, c.semester, d.name as department
@@ -21,6 +21,7 @@ def generate_report_card(student_id):
 
     if not student:
         cur.close()
+        conn.close()
         return None
 
     cur.execute("""
@@ -32,8 +33,10 @@ def generate_report_card(student_id):
     """, (student_id,))
     marks = cur.fetchall()
     cur.close()
+    conn.close()
 
     filepath = os.path.join(Config.REPORTS_FOLDER, f'report_{student_id}.pdf')
+    os.makedirs(Config.REPORTS_FOLDER, exist_ok=True)
     doc = SimpleDocTemplate(filepath, pagesize=A4)
     styles = getSampleStyleSheet()
     elements = []

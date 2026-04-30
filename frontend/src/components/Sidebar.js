@@ -7,6 +7,7 @@ const menus = {
     { to: '/dashboard', icon: '⊞', label: 'Dashboard' },
     { to: '/students', icon: '👥', label: 'Students' },
     { to: '/leaderboard', icon: '🏆', label: 'Leaderboard' },
+    { to: '/admin', icon: '⚙️', label: 'Admin Panel' },
   ],
   hod: [
     { to: '/dashboard', icon: '⊞', label: 'Dashboard' },

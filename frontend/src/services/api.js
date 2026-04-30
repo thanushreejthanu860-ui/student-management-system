@@ -30,5 +30,14 @@ export const getResult = id => api.get(`/marks/result/${id}`);
 export const getRanks = classId => api.get(`/marks/ranks/${classId}`);
 export const getAttendance = id => api.get(`/attendance/${id}`);
 export const getNotifications = () => api.get('/notifications');
+export const getAdminUsers = () => api.get('/admin/users');
+export const createUser = data => api.post('/admin/users', data);
+export const deleteUser = id => api.delete(`/admin/users/${id}`);
+export const getAdminSubjects = () => api.get('/admin/subjects');
+export const getAdminClasses = () => api.get('/admin/classes');
+export const getAdminAssignments = () => api.get('/admin/assignments');
+export const deleteAssignment = id => api.delete(`/admin/assignments/${id}`);
+export const assignFaculty = data => api.post('/assign-faculty', data);
+export const uploadExcel = formData => api.post('/upload-excel', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
 export default api;

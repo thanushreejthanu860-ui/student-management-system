@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import StudentList from './pages/StudentList';
 import StudentProfile from './pages/StudentProfile';
 import Leaderboard from './pages/Leaderboard';
+import AdminPanel from './pages/AdminPanel';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/students" element={<ProtectedRoute><StudentList /></ProtectedRoute>} />
           <Route path="/students/:id" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute roles={['admin', 'hod']}><Leaderboard /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminPanel /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>

@@ -1,24 +1,16 @@
 from flask import Flask
 from flask_jwt_extended import JWTManager
+from flask_cors import CORS
 from config import Config
-from models import mysql
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(Config)
-
-    # MySQL config
-    app.config['MYSQL_HOST'] = Config.MYSQL_HOST
-    app.config['MYSQL_USER'] = Config.MYSQL_USER
-    app.config['MYSQL_PASSWORD'] = Config.MYSQL_PASSWORD
-    app.config['MYSQL_DB'] = Config.MYSQL_DB
-    app.config['MYSQL_CURSORCLASS'] = Config.MYSQL_CURSORCLASS
     app.config['JWT_SECRET_KEY'] = Config.JWT_SECRET_KEY
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = Config.JWT_ACCESS_TOKEN_EXPIRES
 
-    mysql.init_app(app)
+    CORS(app)
     JWTManager(app)
 
-    # Register blueprints
     from routes.auth import auth_bp
     from routes.students import students_bp
     from routes.marks import marks_bp

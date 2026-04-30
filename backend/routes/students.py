@@ -15,8 +15,8 @@ def require_roles(*roles):
 @jwt_required()
 def get_students():
     claims = get_jwt()
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
 
     class_id = request.args.get('class_id')
     search = request.args.get('search', '')
@@ -35,7 +35,6 @@ def get_students():
         query += " AND s.class_id = %s"
         params.append(class_id)
 
-    # Faculty can only see their assigned classes
     if claims.get('role') == 'faculty':
         query += """ AND s.class_id IN (
             SELECT class_id FROM faculty_assignments WHERE faculty_id = %s
@@ -45,14 +44,18 @@ def get_students():
     cur.execute(query, params)
     students = cur.fetchall()
     cur.close()
+    conn.close()
     return jsonify({'students': students, 'count': len(students)}), 200
 
 
 @students_bp.route('/student/<int:student_id>', methods=['GET'])
 @jwt_required()
 def get_student(student_id):
-    db = get_db()
-    cur = db.connection.cursor()
+    claims = get_jwt()
+    user_id = int(get_jwt_identity())
+    role = claims.get('role')
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
 
     cur.execute("""
         SELECT s.*, c.class_name, c.semester, d.name as department
@@ -65,32 +68,66 @@ def get_student(student_id):
 
     if not student:
         cur.close()
+        conn.close()
         return jsonify({'error': 'Student not found'}), 404
 
-    # Get marks summary
-    cur.execute("""
-        SELECT sub.subject_name, sub.subject_code, m.exam_type,
-               m.marks_obtained, m.max_marks
-        FROM marks m
-        JOIN subjects sub ON m.subject_id = sub.id
-        WHERE m.student_id = %s
-        ORDER BY sub.subject_name, m.exam_type
-    """, (student_id,))
+    # Get assigned subject IDs for faculty/hod
+    assigned_subjects = None
+    if role in ('faculty', 'hod'):
+        cur.execute("""
+            SELECT subject_id FROM faculty_assignments
+            WHERE faculty_id = %s AND class_id = %s
+        """, (user_id, student['class_id']))
+        rows = cur.fetchall()
+        assigned_subjects = [r['subject_id'] for r in rows]
+
+    if assigned_subjects is not None and len(assigned_subjects) > 0:
+        fmt = ','.join(['%s'] * len(assigned_subjects))
+        cur.execute(f"""
+            SELECT sub.subject_name, sub.subject_code, m.exam_type,
+                   m.marks_obtained, m.max_marks
+            FROM marks m
+            JOIN subjects sub ON m.subject_id = sub.id
+            WHERE m.student_id = %s AND m.subject_id IN ({fmt})
+            ORDER BY sub.subject_name, m.exam_type
+        """, [student_id] + assigned_subjects)
+    else:
+        cur.execute("""
+            SELECT sub.subject_name, sub.subject_code, m.exam_type,
+                   m.marks_obtained, m.max_marks
+            FROM marks m
+            JOIN subjects sub ON m.subject_id = sub.id
+            WHERE m.student_id = %s
+            ORDER BY sub.subject_name, m.exam_type
+        """, (student_id,))
     marks = cur.fetchall()
 
-    # Get attendance summary
-    cur.execute("""
-        SELECT sub.subject_name,
-               SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) as present,
-               COUNT(*) as total,
-               ROUND(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as percentage
-        FROM attendance a
-        JOIN subjects sub ON a.subject_id = sub.id
-        WHERE a.student_id = %s
-        GROUP BY sub.id, sub.subject_name
-    """, (student_id,))
+    if assigned_subjects is not None and len(assigned_subjects) > 0:
+        fmt = ','.join(['%s'] * len(assigned_subjects))
+        cur.execute(f"""
+            SELECT sub.subject_name,
+                   SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) as present,
+                   COUNT(*) as total,
+                   ROUND(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as percentage
+            FROM attendance a
+            JOIN subjects sub ON a.subject_id = sub.id
+            WHERE a.student_id = %s AND a.subject_id IN ({fmt})
+            GROUP BY sub.id, sub.subject_name
+        """, [student_id] + assigned_subjects)
+    else:
+        cur.execute("""
+            SELECT sub.subject_name,
+                   SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) as present,
+                   COUNT(*) as total,
+                   ROUND(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as percentage
+            FROM attendance a
+            JOIN subjects sub ON a.subject_id = sub.id
+            WHERE a.student_id = %s
+            GROUP BY sub.id, sub.subject_name
+        """, (student_id,))
     attendance = cur.fetchall()
     cur.close()
+    conn.close()
 
     return jsonify({'student': student, 'marks': marks, 'attendance': attendance}), 200
 
@@ -102,27 +139,27 @@ def add_student():
     if err: return err
 
     data = request.get_json()
-    required = ['name', 'usn', 'class_id']
-    if not all(data.get(f) for f in required):
+    if not all(data.get(f) for f in ['name', 'usn', 'class_id']):
         return jsonify({'error': 'name, usn, class_id required'}), 400
 
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
     try:
         cur.execute("""
             INSERT INTO students (name, usn, email, phone, class_id, date_of_birth, gender, address)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (data['name'], data['usn'], data.get('email'), data.get('phone'),
               data['class_id'], data.get('date_of_birth'), data.get('gender'), data.get('address')))
-        db.connection.commit()
         sid = cur.lastrowid
+        conn.commit()
         log_activity(int(get_jwt_identity()), 'add_student', 'students', sid, f"Added student {data['usn']}")
         return jsonify({'message': 'Student added', 'id': sid}), 201
     except Exception as e:
-        db.connection.rollback()
+        conn.rollback()
         return jsonify({'error': str(e)}), 400
     finally:
         cur.close()
+        conn.close()
 
 
 @students_bp.route('/student/<int:student_id>', methods=['PUT'])
@@ -132,22 +169,23 @@ def update_student(student_id):
     if err: return err
 
     data = request.get_json()
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE students SET name=%s, email=%s, phone=%s, gender=%s, address=%s
             WHERE id=%s
         """, (data.get('name'), data.get('email'), data.get('phone'),
               data.get('gender'), data.get('address'), student_id))
-        db.connection.commit()
+        conn.commit()
         log_activity(int(get_jwt_identity()), 'update_student', 'students', student_id)
         return jsonify({'message': 'Student updated'}), 200
     except Exception as e:
-        db.connection.rollback()
+        conn.rollback()
         return jsonify({'error': str(e)}), 400
     finally:
         cur.close()
+        conn.close()
 
 
 @students_bp.route('/student/<int:student_id>', methods=['DELETE'])
@@ -156,15 +194,16 @@ def delete_student(student_id):
     err = require_roles('admin')
     if err: return err
 
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     try:
         cur.execute("DELETE FROM students WHERE id = %s", (student_id,))
-        db.connection.commit()
+        conn.commit()
         log_activity(int(get_jwt_identity()), 'delete_student', 'students', student_id)
         return jsonify({'message': 'Student deleted'}), 200
     except Exception as e:
-        db.connection.rollback()
+        conn.rollback()
         return jsonify({'error': str(e)}), 400
     finally:
         cur.close()
+        conn.close()

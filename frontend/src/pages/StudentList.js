@@ -12,20 +12,33 @@ export default function StudentList() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
+  const [semFilter, setSemFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
-    getStudents({ search, class_id: classFilter || undefined })
-      .then(r => setStudents(sortAlpha(r.data.students || [])))
+    getStudents({ search })
+      .then(r => {
+        const sorted = sortAlpha(r.data.students || []);
+        setAllStudents(sorted);
+        setStudents(sorted);
+      })
       .catch(() => toast.error('Failed to load students'))
       .finally(() => setLoading(false));
-  }, [search, classFilter]);
+  }, [search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    let filtered = allStudents;
+    if (semFilter) filtered = filtered.filter(s => String(s.semester) === semFilter);
+    if (classFilter) filtered = filtered.filter(s => s.class_name === classFilter);
+    setStudents(filtered);
+  }, [classFilter, semFilter, allStudents]);
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
@@ -37,7 +50,12 @@ export default function StudentList() {
     } catch { toast.error('Delete failed'); }
   };
 
-  const classes = [...new Set(students.map(s => s.class_name))].sort();
+  const semesters = [...new Set(allStudents.map(s => s.semester))].sort((a,b) => a-b);
+  const classes = [...new Set(
+    allStudents
+      .filter(s => !semFilter || String(s.semester) === semFilter)
+      .map(s => s.class_name)
+  )].sort();
 
   return (
     <Layout>
@@ -55,8 +73,12 @@ export default function StudentList() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        <select className="filter-select" value={semFilter} onChange={e => { setSemFilter(e.target.value); setClassFilter(''); }}>
+          <option value="">All Semesters</option>
+          {semesters.map(s => <option key={s} value={s}>Semester {s}</option>)}
+        </select>
         <select className="filter-select" value={classFilter} onChange={e => setClassFilter(e.target.value)}>
-          <option value="">All Classes</option>
+          <option value="">All Sections</option>
           {classes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>

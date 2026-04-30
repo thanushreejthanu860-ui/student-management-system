@@ -7,14 +7,14 @@ def process_excel_upload(filepath, upload_type, uploaded_by):
     df = pd.read_excel(filepath)
     df.columns = [c.strip().lower().replace(' ', '_') for c in df.columns]
 
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
     inserted = 0
     errors = []
 
     try:
         if upload_type == 'students':
-            for _, row in df.iterrows():
+            for i, row in df.iterrows():
                 try:
                     cur.execute("""
                         INSERT INTO students (name, usn, email, phone, class_id, gender)
@@ -25,11 +25,10 @@ def process_excel_upload(filepath, upload_type, uploaded_by):
                           row['name'], row.get('email')))
                     inserted += 1
                 except Exception as e:
-                    errors.append(f"Row {_+2}: {str(e)}")
+                    errors.append(f"Row {i+2}: {str(e)}")
 
         elif upload_type == 'marks':
-            # Expected columns: usn, subject_code, exam_type, marks_obtained, max_marks
-            for _, row in df.iterrows():
+            for i, row in df.iterrows():
                 try:
                     cur.execute("SELECT id FROM students WHERE usn = %s", (row['usn'],))
                     student = cur.fetchone()
@@ -46,13 +45,12 @@ def process_excel_upload(filepath, upload_type, uploaded_by):
                               uploaded_by, row['marks_obtained']))
                         inserted += 1
                     else:
-                        errors.append(f"Row {_+2}: Student or subject not found")
+                        errors.append(f"Row {i+2}: Student or subject not found")
                 except Exception as e:
-                    errors.append(f"Row {_+2}: {str(e)}")
+                    errors.append(f"Row {i+2}: {str(e)}")
 
         elif upload_type == 'attendance':
-            # Expected columns: usn, subject_code, date, status
-            for _, row in df.iterrows():
+            for i, row in df.iterrows():
                 try:
                     cur.execute("SELECT id FROM students WHERE usn = %s", (row['usn'],))
                     student = cur.fetchone()
@@ -68,20 +66,21 @@ def process_excel_upload(filepath, upload_type, uploaded_by):
                               uploaded_by, row['status']))
                         inserted += 1
                     else:
-                        errors.append(f"Row {_+2}: Student or subject not found")
+                        errors.append(f"Row {i+2}: Student or subject not found")
                 except Exception as e:
-                    errors.append(f"Row {_+2}: {str(e)}")
+                    errors.append(f"Row {i+2}: {str(e)}")
 
-        db.connection.commit()
+        conn.commit()
     finally:
         cur.close()
+        conn.close()
 
     return {'inserted': inserted, 'errors': errors}
 
 
 def export_students_excel(class_id):
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
 
     cur.execute("""
         SELECT s.usn, s.name, s.email, s.phone, s.gender,
@@ -96,7 +95,9 @@ def export_students_excel(class_id):
     """, (class_id,))
     data = cur.fetchall()
     cur.close()
+    conn.close()
 
+    os.makedirs(Config.REPORTS_FOLDER, exist_ok=True)
     df = pd.DataFrame(data)
     filepath = os.path.join(Config.REPORTS_FOLDER, f'class_{class_id}_report.xlsx')
     df.to_excel(filepath, index=False)

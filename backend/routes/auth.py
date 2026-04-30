@@ -15,8 +15,8 @@ def login():
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
 
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
     cur.execute("""
         SELECT u.id, u.name, u.email, u.password, u.is_active, r.role_name
         FROM users u JOIN roles r ON u.role_id = r.id
@@ -24,6 +24,7 @@ def login():
     """, (email,))
     user = cur.fetchone()
     cur.close()
+    conn.close()
 
     if not user or not user['is_active']:
         return jsonify({'error': 'Invalid credentials'}), 401
@@ -55,15 +56,15 @@ def register():
     name = data.get('name')
     email = data.get('email')
     password = data.get('password')
-    role_name = data.get('role')  # admin, hod, faculty
+    role_name = data.get('role')
 
     if not all([name, email, password, role_name]):
         return jsonify({'error': 'All fields required'}), 400
 
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-    db = get_db()
-    cur = db.connection.cursor()
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
     try:
         cur.execute("SELECT id FROM roles WHERE role_name = %s", (role_name,))
         role = cur.fetchone()
@@ -74,12 +75,13 @@ def register():
             "INSERT INTO users (name, email, password, role_id) VALUES (%s, %s, %s, %s)",
             (name, email, hashed, role['id'])
         )
-        db.connection.commit()
         user_id = cur.lastrowid
+        conn.commit()
         log_activity(int(get_jwt_identity()), 'create_user', 'users', user_id, f"Created {role_name}: {email}")
         return jsonify({'message': 'User created', 'id': user_id}), 201
     except Exception as e:
-        db.connection.rollback()
+        conn.rollback()
         return jsonify({'error': str(e)}), 400
     finally:
         cur.close()
+        conn.close()
